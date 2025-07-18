@@ -1,0 +1,5 @@
+# 忽略Obsidian文件夹
+ThreadNote/
+
+# 忽略vscode配置文件夹
+.vscode/
