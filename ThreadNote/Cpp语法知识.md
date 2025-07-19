@@ -1,14 +1,44 @@
+# 涉及到的C++语法知识
 
-构造函数语法
+
+
+## 构造函数 Constructor
+
+### 概念
+
+当用类创建对象时，构造函数会被**自动调用**
 
 ```cpp
-class Person {
-    int age;
-    std::string name;
+Student stu;
+```
+
+
+
+### 语法
+
+```cpp
+class Student {
 public:
-    Person(int a, std::string n) : age(a), name(n) {}  // 初始化列表写法
+    std::string name;
+    int age;
+
+    // 无参构造
+    Student() : name(""), age(0) {}
+
+    // 带一个参数
+    Student(std::string n) : name(n), age(0) {}
+
+    // 带两个参数
+    Student(std::string n, int a) : name(n), age(a) {}
 };
 ```
+
+
+
+## 拷贝构造函数 Copy Constructor
+
+### 概念
+
 
 
 拷贝构造函数 什么时候会被调用
