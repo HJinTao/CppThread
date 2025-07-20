@@ -247,23 +247,150 @@ void mainThread() {
 
 
 
+## 1.7 线程池
+
+### 1. 概念
+
+在一个程序中，如果我们需要多次使用线程，这就意味着，需要多次的创建并销毁线程。而创建并销毁线程的过程势必会消耗内存，线程过多会带来调动的开销，进而影响缓存局部性和整体性能。
 
 
 
+### 2.图解
+
+![](image/ThreadPool.png)
+
+### 3.工作流程
+
+1. 主线程创建线程池（4个线程）并全都挂起
+
+2. 主线程循环提交10个任务：
+   - 调用enqueue()将任务包装成function<void()>
+   - 任务加入队列时自动加锁（unique_lock）
+   - 通过cv.notify_one()唤醒一个等待线程
+
+3. 工作线程行为：
+
+   ```cpp
+   while (true) {
+       function<void()> task;
+   
+       {
+           unique_lock<mutex> lock(mtx);
+   
+           cv.wait(lock, [this] {
+               return !tasks.empty() || stop;
+           });
+   
+           if (tasks.empty() && stop) {
+               return;
+           }
+   
+           task = move(tasks.front());
+           tasks.pop();
+       } // lock 在此作用域结束时自动释放
+   
+       task();
+   }
+   ```
+
+4. 析构过程：
+   - 设置stop=true
+   - cv.notify_all()唤醒所有线程
+   - 等待所有工作线程退出
+
+### 4.关键组件
+
+1. **任务队列（tasks）**
+	- 先进先出队列（FIFO）queue
+	- 存储可调用对象（`function<void()>`）
+	- **访问受互斥锁（mtx）保护**
+2. **工作线程（workers）**
+	- 数量由构造函数指定（示例中为4个）
+	- 每个线程执行相同循环
+3. **同步机制**
+	- `mutex mtx`：保护共享数据（tasks/stop）
+	- `condition_variable cv`：
+		- 工作线程在空队列时通过`cv.wait()`休眠
+		- 主线程通过`cv.notify_one()`唤醒线程
+		- 析构时通过`cv.notify_all()`唤醒所有线程
+4. **结束主线程**
+	- 析构函数设置`stop=true`
+	- 广播通知所有线程退出
+	- 调用`join()`等待线程结束
+
+### 5.具体实现
 
 
+```cpp
+class ThreadPool
+{
+private:
+    bool stop;                      // 指示线程池是否应该停止
+    vector<thread> threads;        // 线程数组 获取任务 完成任务
+    queue<function<void()>> tasks; // 任务队列
+    mutex mtx;                      // mutex主要是保护共享状态 (tasks,stop) 防止多个线程同时修改
+    condition_variable cv;
 
+public:
+    ThreadPool(int threadsNum) : stop(false){
+        for (int i = 0; i < threadsNum; i++){
+            threads.emplace_back([this]{
+                while(true){
+                    function<void()> task;
+                    {
+                        unique_lock<mutex> lock(mtx);
+                        cv.wait(lock,[this]{
+                            return !tasks.empty() || stop;
+                        });
+                        if(tasks.empty() && stop){
+                            return;
+                        }
+                        task = (move(tasks.front()));
+                        tasks.pop();
+                    }   // 作用域结束lock自动解锁
+                    task();
+                }
+            });
+        }
+    }
 
+    ~ThreadPool(){
+        {
+            unique_lock<mutex> lock(mtx);
+            stop = true;
+        }
+        cv.notify_all();
+        for(auto &t : threads){
+            t.join();
+        }
+    }
 
+    template<class F,class... Args> void enqueue(F&& f,Args&&... args){
+        function<void()> task = bind(forward<F>(f),forward<Args>(args)...);
+        {
+            unique_lock<mutex> lock(mtx);
+            tasks.emplace(move(task));
+        }
+        cv.notify_one();
+    }
 
+};
 
+int main(){
+    
+    ThreadPool pool(4);
+    for(int i = 0; i < 10;i++){
+        pool.enqueue([i]{
+            printf("task %d is running\n",i);
+            this_thread::sleep_for(chrono::seconds(1));
+            printf("task %d is done\n",i);
+        });
+    }
 
+    return 0;
+}
 
-
-
-
-
-
+```
 
 
 
